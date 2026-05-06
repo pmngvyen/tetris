@@ -209,6 +209,10 @@
         <div class="info-value score-val" id="hiDisplay">000000</div>
       </div>
       <div class="info-box">
+        <div class="info-label">HOLD</div>
+        <canvas id="holdCanvas" width="132" height="90"></canvas>
+      </div>
+      <div class="info-box">
         <div class="info-label">NEXT</div>
         <canvas id="nextCanvas" width="132" height="90"></canvas>
       </div>
@@ -222,7 +226,7 @@
       </div>
       <div class="info-box" style="font-size:5px;color:#555;line-height:2.4;padding:7px;">
         <div style="color:#888;margin-bottom:4px;font-size:6px;">CONTROLS</div>
-        ←→ MOVE<br>↑ ROTATE<br>↓ SOFT DROP<br>SPC DROP<br>P PAUSE
+        ←→ MOVE<br>↑ ROTATE<br>↓ SOFT DROP<br>SPC DROP<br>TAB HOLD<br>P/ESC PAUSE
       </div>
     </div>
   </div>
@@ -252,6 +256,8 @@ const canvas = document.getElementById('tetris');
 const ctx = canvas.getContext('2d');
 const nextCanvas = document.getElementById('nextCanvas');
 const nCtx = nextCanvas.getContext('2d');
+const holdCanvas = document.getElementById('holdCanvas');
+const hCtx = holdCanvas.getContext('2d');
 
 const COLS = 10, ROWS = 20, CELL = 32;
 
@@ -277,7 +283,7 @@ const PIECES = [
   [[0,0,7],[7,7,7]],
 ];
 
-let board, piece, nextPiece, score, level, lines, hiScore, gameRunning, paused;
+let board, piece, nextPiece, holdPiece, canHold, score, level, lines, hiScore, gameRunning, paused;
 let dropInterval, lastTime, dropCounter, animFrame;
 let counts = {1:0,2:0,3:0,4:0};
 
@@ -291,7 +297,22 @@ function createBoard(){ return Array.from({length:ROWS},()=>Array(COLS).fill(0))
 function randomPiece(){
   const idx = Math.floor(Math.random()*PIECES.length);
   const shape = PIECES[idx].map(r=>[...r]);
-  return {shape, x:Math.floor(COLS/2)-Math.floor(shape[0].length/2), y:0};
+  return makePiece(shape);
+}
+
+function cloneShape(shape){
+  return shape.map(row => [...row]);
+}
+
+function makePiece(shape){
+  const copy = cloneShape(shape);
+  return {shape:copy, x:Math.floor(COLS/2)-Math.floor(copy[0].length/2), y:0};
+}
+
+function resetPiecePosition(p){
+  p.x = Math.floor(COLS/2)-Math.floor(p.shape[0].length/2);
+  p.y = 0;
+  return p;
 }
 
 function rotate(m){
@@ -491,22 +512,33 @@ function draw(){
   }));
 }
 
-function drawNext(){
-  nCtx.fillStyle='#000';
-  nCtx.fillRect(0,0,nextCanvas.width,nextCanvas.height);
-  if(!nextPiece) return;
-  const s=nextPiece.shape, sz=18;
-  const ox=Math.floor((nextCanvas.width-s[0].length*sz)/2);
-  const oy=Math.floor((nextCanvas.height-s.length*sz)/2);
+function drawMini(cx, miniCanvas, p){
+  cx.fillStyle='#000';
+  cx.fillRect(0,0,miniCanvas.width,miniCanvas.height);
+  if(!p) return;
+  const s=p.shape, sz=18;
+  const ox=Math.floor((miniCanvas.width-s[0].length*sz)/2);
+  const oy=Math.floor((miniCanvas.height-s.length*sz)/2);
   s.forEach((row,r)=>row.forEach((v,c)=>{
-    if(v) drawBlock(nCtx,ox+c*sz,oy+r*sz,v,sz);
+    if(v) drawBlock(cx,ox+c*sz,oy+r*sz,v,sz);
   }));
+}
+
+function drawNext(){
+  drawMini(nCtx, nextCanvas, nextPiece);
+}
+
+function drawHold(){
+  drawMini(hCtx, holdCanvas, holdPiece);
 }
 
 function spawnPiece(){
   piece=nextPiece||randomPiece();
+  resetPiecePosition(piece);
   nextPiece=randomPiece();
+  canHold = true;
   drawNext();
+  drawHold();
   if(!valid(piece)) gameOver();
 }
 
@@ -516,6 +548,7 @@ function gameOver(){
   document.getElementById('overlayTitle').textContent='GAME OVER';
   document.getElementById('overlaySub').textContent='SCORE  '+pad(score,6);
   document.getElementById('startBtn').textContent='RETRY';
+  document.getElementById('startBtn').onclick=startGame;
   document.getElementById('overlay').style.display='flex';
 }
 
@@ -524,9 +557,10 @@ function startGame(){
   score=0;level=0;lines=0;
   counts={1:0,2:0,3:0,4:0};
   dropInterval=800;dropCounter=0;lastTime=0;
-  piece=null;nextPiece=null;paused=false;
+  piece=null;nextPiece=null;holdPiece=null;canHold=true;paused=false;
   clearingLines=false;flashRows=new Set();flashCells=new Map();lastLockedCells=[];
   document.getElementById('overlay').style.display='none';
+  document.getElementById('startBtn').onclick=startGame;
   updateUI();
   gameRunning=true;
   nextPiece=randomPiece();
@@ -554,6 +588,44 @@ function loop(ts){
     draw();
   }
   animFrame=requestAnimationFrame(loop);
+}
+
+function togglePause(){
+  if(!gameRunning || clearingLines) return;
+  paused = !paused;
+  stopDAS();
+  if(paused){
+    document.getElementById('overlayTitle').textContent='PAUSED';
+    document.getElementById('overlaySub').textContent='PRESS P OR ESC TO RESUME';
+    document.getElementById('startBtn').textContent='RESUME';
+    document.getElementById('startBtn').onclick=togglePause;
+    document.getElementById('overlay').style.display='flex';
+  } else {
+    document.getElementById('overlay').style.display='none';
+    document.getElementById('startBtn').onclick=startGame;
+    lastTime=performance.now();
+  }
+}
+
+function holdCurrentPiece(){
+  if(!gameRunning || paused || clearingLines || !canHold) return;
+  const current = makePiece(piece.shape);
+  if(!holdPiece){
+    holdPiece = current;
+    piece = nextPiece || randomPiece();
+    nextPiece = randomPiece();
+  } else {
+    const swap = holdPiece;
+    holdPiece = current;
+    piece = makePiece(swap.shape);
+  }
+  canHold = false;
+  resetPiecePosition(piece);
+  drawHold();
+  drawNext();
+  dropCounter = 0;
+  if(!valid(piece)) gameOver();
+  draw();
 }
 
 function moveLeft(){ if(gameRunning&&!paused&&!clearingLines&&valid({x:piece.x-1,y:piece.y,shape:piece.shape})) piece.x--; }
@@ -600,7 +672,9 @@ document.addEventListener('keydown',e=>{
     case 'ArrowUp':    e.preventDefault(); if(!e.repeat) rotatePiece(); break;
     case 'ArrowDown':  e.preventDefault(); softDrop(); break;
     case 'Space':      e.preventDefault(); hardDrop(); break;
-    case 'KeyP': paused=!paused; if(!paused) lastTime=performance.now(); break;
+    case 'Tab':       e.preventDefault(); if(!e.repeat) holdCurrentPiece(); break;
+    case 'KeyP':      e.preventDefault(); if(!e.repeat) togglePause(); break;
+    case 'Escape':    e.preventDefault(); if(!e.repeat) togglePause(); break;
     case 'Enter': if(!gameRunning) startGame(); break;
   }
 });
