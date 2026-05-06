@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TETRIS</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; image-rendering: pixelated; }
+
+  body {
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Press Start 2P', monospace;
+  }
+
+  .cabinet {
+    background: #c0c0c0;
+    border: 6px solid #808080;
+    border-right-color: #404040;
+    border-bottom-color: #404040;
+    padding: 10px;
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .top-bar {
+    background: #000;
+    padding: 8px 12px;
+    text-align: center;
+    margin-bottom: 6px;
+    border: 3px solid;
+    border-color: #404040 #fff #fff #404040;
+  }
+
+  .top-bar .logo {
+    font-size: 18px;
+    color: #fff;
+    letter-spacing: 4px;
+    text-shadow: 3px 3px 0 #ff0000;
+  }
+
+  .game-area {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .board-wrap {
+    border: 4px solid;
+    border-color: #404040 #fff #fff #404040;
+    background: #000;
+    position: relative;
+  }
+
+  canvas#tetris { display: block; }
+
+  .right-panel {
+    width: 148px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .info-box {
+    background: #000;
+    border: 4px solid;
+    border-color: #404040 #fff #fff #404040;
+    padding: 8px;
+  }
+
+  .info-label {
+    font-size: 6px;
+    color: #aaa;
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+  }
+
+  .info-value {
+    font-size: 11px;
+    color: #fff;
+    letter-spacing: 1px;
+  }
+
+  .info-value.score-val {
+    font-size: 12px;
+    color: #ffff00;
+  }
+
+  .stats-bar {
+    background: #000;
+    border: 4px solid;
+    border-color: #404040 #fff #fff #404040;
+    padding: 6px 8px;
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+  }
+
+  .stat-item { text-align: center; }
+  .stat-label { font-size: 5px; color: #606060; margin-bottom: 3px; }
+  .stat-val   { font-size: 8px;  color: #00ffff; }
+
+  #overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.88);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 10;
+  }
+
+  .ov-title {
+    font-size: 14px;
+    color: #ffff00;
+    text-align: center;
+    text-shadow: 2px 2px 0 #ff6600;
+    line-height: 1.8;
+  }
+
+  .ov-sub {
+    font-size: 7px;
+    color: #aaa;
+    text-align: center;
+    line-height: 2;
+  }
+
+  .nes-btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    padding: 10px 16px;
+    background: #c0c0c0;
+    border: 3px solid;
+    border-color: #fff #404040 #404040 #fff;
+    color: #000;
+    cursor: pointer;
+    letter-spacing: 1px;
+  }
+
+  .nes-btn:active {
+    border-color: #404040 #fff #fff #404040;
+    transform: translate(1px,1px);
+  }
+
+  .mobile-controls {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .m-row { display: flex; gap: 4px; }
+
+  .m-btn {
+    width: 48px; height: 48px;
+    background: #808080;
+    border: 3px solid;
+    border-color: #c0c0c0 #404040 #404040 #c0c0c0;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 13px;
+    color: #000;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .m-btn:active { border-color: #404040 #c0c0c0 #c0c0c0 #404040; }
+
+  @media (max-width: 600px) {
+    .mobile-controls { display: flex; }
+    .cabinet { padding: 8px; }
+    .top-bar .logo { font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="cabinet">
+  <div class="top-bar">
+    <div class="logo">TETRIS</div>
+  </div>
+
+  <div class="game-area">
+    <div class="board-wrap">
+      <canvas id="tetris" width="320" height="640"></canvas>
+      <div id="overlay">
+        <div class="ov-title" id="overlayTitle">TETRIS</div>
+        <div class="ov-sub" id="overlaySub">PRESS START</div>
+        <button class="nes-btn" id="startBtn" onclick="startGame()">START</button>
+      </div>
+    </div>
+
+    <div class="right-panel">
+      <div class="info-box">
+        <div class="info-label">SCORE</div>
+        <div class="info-value score-val" id="scoreDisplay">000000</div>
+      </div>
+      <div class="info-box">
+        <div class="info-label">HI-SCORE</div>
+        <div class="info-value score-val" id="hiDisplay">000000</div>
+      </div>
+      <div class="info-box">
+        <div class="info-label">NEXT</div>
+        <canvas id="nextCanvas" width="132" height="90"></canvas>
+      </div>
+      <div class="info-box">
+        <div class="info-label">LEVEL</div>
+        <div class="info-value" id="levelDisplay">00</div>
+      </div>
+      <div class="info-box">
+        <div class="info-label">LINES</div>
+        <div class="info-value" id="linesDisplay">000</div>
+      </div>
+      <div class="info-box" style="font-size:5px;color:#555;line-height:2.4;padding:7px;">
+        <div style="color:#888;margin-bottom:4px;font-size:6px;">CONTROLS</div>
+        ←→ MOVE<br>↑ ROTATE<br>↓ SOFT DROP<br>SPC DROP<br>P PAUSE
+      </div>
+    </div>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat-item"><div class="stat-label">TETRIS</div><div class="stat-val" id="tetrisCount">0</div></div>
+    <div class="stat-item"><div class="stat-label">TRIPLE</div><div class="stat-val" id="tripleCount">0</div></div>
+    <div class="stat-item"><div class="stat-label">DOUBLE</div><div class="stat-val" id="doubleCount">0</div></div>
+    <div class="stat-item"><div class="stat-label">SINGLE</div><div class="stat-val" id="singleCount">0</div></div>
+  </div>
+
+  <div class="mobile-controls">
+    <div class="m-row"><div class="m-btn" ontouchstart="rotatePiece()">↑</div></div>
+    <div class="m-row">
+      <div class="m-btn" ontouchstart="moveLeft()">←</div>
+      <div class="m-btn" ontouchstart="softDrop()">↓</div>
+      <div class="m-btn" ontouchstart="moveRight()">→</div>
+    </div>
+    <div class="m-row">
+      <div class="m-btn" style="width:104px;font-size:7px;letter-spacing:1px;" ontouchstart="hardDrop()">DROP</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('tetris');
+const ctx = canvas.getContext('2d');
+const nextCanvas = document.getElementById('nextCanvas');
+const nCtx = nextCanvas.getContext('2d');
+
+const COLS = 10, ROWS = 20, CELL = 32;
+
+// NES Tetris classic colors: [face, dark, highlight]
+const COLORS = [
+  null,
+  ['#00aaff','#004488','#88ddff'], // I
+  ['#ffdd00','#886600','#ffff88'], // O
+  ['#aa00ff','#550088','#dd88ff'], // T
+  ['#00cc00','#005500','#88ff88'], // S
+  ['#ff2200','#880000','#ff8888'], // Z
+  ['#0044ff','#002288','#88aaff'], // J
+  ['#ff8800','#884400','#ffcc88'], // L
+];
+
+const PIECES = [
+  [[1,1,1,1]],
+  [[2,2],[2,2]],
+  [[0,3,0],[3,3,3]],
+  [[0,4,4],[4,4,0]],
+  [[5,5,0],[0,5,5]],
+  [[6,0,0],[6,6,6]],
+  [[0,0,7],[7,7,7]],
+];
+
+let board, piece, nextPiece, score, level, lines, hiScore, gameRunning, paused;
+let dropInterval, lastTime, dropCounter, animFrame;
+let counts = {1:0,2:0,3:0,4:0};
+
+hiScore = parseInt(localStorage.getItem('nes_hi') || '0');
+document.getElementById('hiDisplay').textContent = pad(hiScore,6);
+
+function pad(n,l){ return String(Math.floor(n)).padStart(l,'0'); }
+
+function createBoard(){ return Array.from({length:ROWS},()=>Array(COLS).fill(0)); }
+
+function randomPiece(){
+  const idx = Math.floor(Math.random()*PIECES.length);
+  const shape = PIECES[idx].map(r=>[...r]);
+  return {shape, x:Math.floor(COLS/2)-Math.floor(shape[0].length/2), y:0};
+}
+
+function rotate(m){
+  const N=m.length, M=m[0].length;
+  const r=Array.from({length:M},()=>Array(N).fill(0));
+  for(let i=0;i<N;i++) for(let j=0;j<M;j++) r[j][N-1-i]=m[i][j];
+  return r;
+}
+
+function valid(p,shape){
+  const s=shape||p.shape;
+  for(let r=0;r<s.length;r++) for(let c=0;c<s[r].length;c++) if(s[r][c]){
+    const nx=p.x+c, ny=p.y+r;
+    if(nx<0||nx>=COLS||ny>=ROWS) return false;
+    if(ny>=0&&board[ny][nx]) return false;
+  }
+  return true;
+}
+
+function merge(){
+  lastLockedCells = [];
+  piece.shape.forEach((row,r)=>row.forEach((v,c)=>{
+    if(v&&piece.y+r>=0){
+      const y = piece.y + r;
+      const x = piece.x + c;
+      board[y][x] = v;
+      lastLockedCells.push({x, y, v});
+    }
+  }));
+}
+
+// ── Line-clear state ──────────────────────────────────────────────
+let flashRows = new Set();   // row indices currently lit white
+let flashCells = new Map();   // "x,y" keys for the locked piece cells flashing white
+let lastLockedCells = [];     // cells from the piece that just locked into the board
+let clearingLines = false;   // true while animation is running
+
+function clearLines(){
+  // Collect full row indices
+  const fullRows = [];
+  for(let r=0; r<ROWS; r++) if(board[r].every(c=>c)) fullRows.push(r);
+  if(fullRows.length === 0){
+    lastLockedCells = [];
+    spawnPiece();
+    draw();
+    return false;
+  }
+  clearingLines = true;
+  cancelAnimationFrame(animFrame); // halt the game loop during animation
+  animateLineClear(fullRows, lastLockedCells);
+  return true;
+}
+
+function animateLineClear(rows, lockedCells){
+  // Three quick flashes. Only the locked-piece cells inside the cleared rows flash.
+  const FLASHES = 3, HALF_MS = 45;
+  const rowSet = new Set(rows);
+  const lockedCellMap = new Map(
+    lockedCells
+      .filter(cell => rowSet.has(cell.y))
+      .map(cell => [`${cell.x},${cell.y}`, cell.v])
+  );
+  let tick = 0;
+  function step(){
+    const flashOn = tick % 2 === 0;
+    flashRows = flashOn ? new Set(rows) : new Set();
+    flashCells = flashOn ? new Map(lockedCellMap) : new Map();
+    draw();
+    tick++;
+    if(tick < FLASHES * 2){
+      setTimeout(step, HALF_MS);
+    } else {
+      flashRows = new Set();
+      flashCells = new Map();
+      lastLockedCells = [];
+      removeRows(rows);
+    }
+  }
+  step();
+}
+
+function removeRows(rows){
+  const rowSet = new Set(rows);
+  // Keep only rows that were NOT full, then prepend empty rows at the top
+  const kept = board.filter((_, r) => !rowSet.has(r));
+  const cleared = rows.length;
+  board.length = 0;
+  for(let i = 0; i < cleared; i++) board.push(Array(COLS).fill(0));
+  for(const row of kept) board.push(row);
+
+  counts[cleared] = (counts[cleared] || 0) + 1;
+  const pts = [0, 40, 100, 300, 1200];
+  score += pts[cleared] * (level + 1);
+  lines += cleared;
+  level = Math.floor(lines / 10);
+  if(score > hiScore){ hiScore = score; localStorage.setItem('nes_hi', hiScore); }
+  updateUI();
+  clearingLines = false;
+  spawnPiece();
+  draw();
+  dropCounter = 0;
+  lastTime = performance.now();
+  animFrame = requestAnimationFrame(loop);
+}
+
+function updateUI(){
+  document.getElementById('scoreDisplay').textContent=pad(score,6);
+  document.getElementById('hiDisplay').textContent=pad(hiScore,6);
+  document.getElementById('levelDisplay').textContent=pad(level,2);
+  document.getElementById('linesDisplay').textContent=pad(lines,3);
+  document.getElementById('singleCount').textContent=counts[1]||0;
+  document.getElementById('doubleCount').textContent=counts[2]||0;
+  document.getElementById('tripleCount').textContent=counts[3]||0;
+  document.getElementById('tetrisCount').textContent=counts[4]||0;
+  const speeds=[800,717,633,550,467,383,300,217,133,100,83,83,83,67,67,67,50,50,50,33];
+  dropInterval=speeds[Math.min(level,speeds.length-1)];
+}
+
+function getGhost(){
+  let g={x:piece.x,y:piece.y,shape:piece.shape};
+  while(valid({x:g.x,y:g.y+1,shape:g.shape})) g.y++;
+  return g;
+}
+
+function drawBlock(cx, px, py, ci, sz){
+  sz=sz||CELL;
+  if(!COLORS[ci]) return;
+  const [face,,hi] = COLORS[ci];
+
+  // face
+  cx.fillStyle = face;
+  cx.fillRect(px, py, sz, sz);
+
+  // top highlight strip
+  cx.fillStyle = hi;
+  cx.fillRect(px, py, sz, 3);
+  cx.fillRect(px, py, 3, sz);
+
+  // bottom-right shadow
+  cx.fillStyle = '#00000066';
+  cx.fillRect(px, py+sz-2, sz, 2);
+  cx.fillRect(px+sz-2, py, 2, sz);
+
+  // inner recessed square
+  cx.fillStyle = face;
+  cx.fillRect(px+3, py+3, sz-6, sz-6);
+
+  // tiny corner pixel
+  cx.fillStyle = hi;
+  cx.fillRect(px+4, py+4, 2, 2);
+}
+
+function draw(){
+  ctx.fillStyle='#000';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // subtle grid lines
+  ctx.strokeStyle='#111';
+  ctx.lineWidth=0.5;
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) ctx.strokeRect(c*CELL,r*CELL,CELL,CELL);
+
+  // board: flash cleared rows, and mark only the locked-piece cells inside those rows
+  for(let r=0;r<ROWS;r++){
+    if(flashRows.has(r)){
+      ctx.fillStyle='#ffffff';
+      ctx.fillRect(0,r*CELL,canvas.width,CELL);
+
+      // The block from the newly locked piece is the only piece cell highlighted.
+      for(let c=0;c<COLS;c++){
+        if(flashCells.has(`${c},${r}`)){
+          ctx.fillStyle='#ffffff';
+          ctx.fillRect(c*CELL,r*CELL,CELL,CELL);
+        }
+      }
+    } else {
+      for(let c=0;c<COLS;c++){
+        if(board[r][c]) drawBlock(ctx,c*CELL,r*CELL,board[r][c]);
+      }
+    }
+  }
+
+  // ghost
+  if(piece&&gameRunning&&!paused&&!clearingLines){
+    const g=getGhost();
+    g.shape.forEach((row,r)=>row.forEach((v,c)=>{
+      if(v&&g.y+r>piece.y+r){
+        ctx.strokeStyle=COLORS[v][0];
+        ctx.lineWidth=1;
+        ctx.strokeRect((g.x+c)*CELL+1,(g.y+r)*CELL+1,CELL-2,CELL-2);
+      }
+    }));
+  }
+
+  // active piece
+  if(piece&&!clearingLines) piece.shape.forEach((row,r)=>row.forEach((v,c)=>{
+    if(v) drawBlock(ctx,(piece.x+c)*CELL,(piece.y+r)*CELL,v);
+  }));
+}
+
+function drawNext(){
+  nCtx.fillStyle='#000';
+  nCtx.fillRect(0,0,nextCanvas.width,nextCanvas.height);
+  if(!nextPiece) return;
+  const s=nextPiece.shape, sz=18;
+  const ox=Math.floor((nextCanvas.width-s[0].length*sz)/2);
+  const oy=Math.floor((nextCanvas.height-s.length*sz)/2);
+  s.forEach((row,r)=>row.forEach((v,c)=>{
+    if(v) drawBlock(nCtx,ox+c*sz,oy+r*sz,v,sz);
+  }));
+}
+
+function spawnPiece(){
+  piece=nextPiece||randomPiece();
+  nextPiece=randomPiece();
+  drawNext();
+  if(!valid(piece)) gameOver();
+}
+
+function gameOver(){
+  gameRunning=false;
+  cancelAnimationFrame(animFrame);
+  document.getElementById('overlayTitle').textContent='GAME OVER';
+  document.getElementById('overlaySub').textContent='SCORE  '+pad(score,6);
+  document.getElementById('startBtn').textContent='RETRY';
+  document.getElementById('overlay').style.display='flex';
+}
+
+function startGame(){
+  board=createBoard();
+  score=0;level=0;lines=0;
+  counts={1:0,2:0,3:0,4:0};
+  dropInterval=800;dropCounter=0;lastTime=0;
+  piece=null;nextPiece=null;paused=false;
+  clearingLines=false;flashRows=new Set();flashCells=new Map();lastLockedCells=[];
+  document.getElementById('overlay').style.display='none';
+  updateUI();
+  gameRunning=true;
+  nextPiece=randomPiece();
+  spawnPiece();
+  animFrame=requestAnimationFrame(loop);
+}
+
+function loop(ts){
+  if(!gameRunning || clearingLines) return;
+  const dt=ts-lastTime; lastTime=ts;
+  if(!paused){
+    dropCounter+=dt;
+    if(dropCounter>=dropInterval){
+      dropCounter=0;
+      if(valid({x:piece.x,y:piece.y+1,shape:piece.shape})){
+        piece.y++;
+      } else {
+        // Only merge if not already being handled by softDrop/hardDrop
+        if(!clearingLines){
+          merge();
+          if(clearLines()) return; // animated clears restart the loop via removeRows
+        }
+      }
+    }
+    draw();
+  }
+  animFrame=requestAnimationFrame(loop);
+}
+
+function moveLeft(){ if(gameRunning&&!paused&&!clearingLines&&valid({x:piece.x-1,y:piece.y,shape:piece.shape})) piece.x--; }
+function moveRight(){ if(gameRunning&&!paused&&!clearingLines&&valid({x:piece.x+1,y:piece.y,shape:piece.shape})) piece.x++; }
+function rotatePiece(){
+  if(!gameRunning||paused||clearingLines) return;
+  const rot=rotate(piece.shape);
+  let off=0;
+  if(!valid({x:piece.x,y:piece.y,shape:rot})){
+    off=piece.x>COLS/2?-1:1;
+    if(!valid({x:piece.x+off,y:piece.y,shape:rot})){off*=2;if(!valid({x:piece.x+off,y:piece.y,shape:rot}))return;}
+  }
+  piece.shape=rot; piece.x+=off;
+}
+function softDrop(){
+  if(!gameRunning||paused||clearingLines) return;
+  if(valid({x:piece.x,y:piece.y+1,shape:piece.shape})){
+    piece.y++;
+    score++;
+    dropCounter=0; // reset so the loop doesn't immediately merge too
+    updateUI();
+  } else {
+    // Piece is already at the bottom — lock it now
+    merge();
+    clearLines();
+  }
+}
+function hardDrop(){
+  if(!gameRunning||paused||clearingLines) return;
+  while(valid({x:piece.x,y:piece.y+1,shape:piece.shape})){piece.y++;score+=2;}
+  merge(); clearLines(); updateUI();
+}
+
+let dasTimer=null, dasRepeat=null;
+function startDAS(fn){ fn(); dasTimer=setTimeout(()=>{ dasRepeat=setInterval(fn,50); },180); }
+function stopDAS(){ clearTimeout(dasTimer); clearInterval(dasRepeat); }
+
+document.addEventListener('keydown',e=>{
+  if(!gameRunning&&e.code==='Enter'){startGame();return;}
+  if(!gameRunning) return;
+  switch(e.code){
+    case 'ArrowLeft':  e.preventDefault(); if(!e.repeat) startDAS(moveLeft); break;
+    case 'ArrowRight': e.preventDefault(); if(!e.repeat) startDAS(moveRight); break;
+    case 'ArrowUp':    e.preventDefault(); if(!e.repeat) rotatePiece(); break;
+    case 'ArrowDown':  e.preventDefault(); softDrop(); break;
+    case 'Space':      e.preventDefault(); hardDrop(); break;
+    case 'KeyP': paused=!paused; if(!paused) lastTime=performance.now(); break;
+    case 'Enter': if(!gameRunning) startGame(); break;
+  }
+});
+document.addEventListener('keyup',e=>{
+  if(e.code==='ArrowLeft'||e.code==='ArrowRight') stopDAS();
+});
+
+draw();
+</script>
+</body>
+</html>
