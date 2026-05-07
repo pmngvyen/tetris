@@ -210,7 +210,7 @@
       </div>
       <div class="info-box">
         <div class="info-label">HOLD</div>
-        <canvas id="holdCanvas" width="132" height="90"></canvas>
+        <canvas id="holdCanvas" width="132" height="70"></canvas>
       </div>
       <div class="info-box">
         <div class="info-label">NEXT</div>
@@ -224,9 +224,9 @@
         <div class="info-label">LINES</div>
         <div class="info-value" id="linesDisplay">000</div>
       </div>
-      <div class="info-box" style="font-size:6px;color:#888;line-height:2.35;padding:7px;">
+      <div class="info-box" style="font-size:6px;color:#888;line-height:2.4;padding:7px;">
         <div style="color:#888;margin-bottom:4px;font-size:6px;">CONTROLS</div>
-        ←→ MOVE<br>↑ ROTATE<br>↓ SOFT DROP<br>SPC DROP<br>TAB HOLD<br>P/ESC PAUSE
+        ←→ MOVE<br>↑ ROTATE<br>↓ SOFT DROP<br>SPC DROP<br>TAB HOLD<br>P/ESC PAUSE<br>R RESTART
       </div>
     </div>
   </div>
@@ -283,7 +283,7 @@ const PIECES = [
   [[0,0,7],[7,7,7]],
 ];
 
-let board, piece, nextPiece, holdPiece, canHold, score, level, lines, hiScore, gameRunning, paused;
+let board, piece, nextPiece, heldPiece, canHold, score, level, lines, hiScore, gameRunning, paused;
 let dropInterval, lastTime, dropCounter, animFrame;
 let counts = {1:0,2:0,3:0,4:0};
 
@@ -294,25 +294,25 @@ function pad(n,l){ return String(Math.floor(n)).padStart(l,'0'); }
 
 function createBoard(){ return Array.from({length:ROWS},()=>Array(COLS).fill(0)); }
 
+function makePiece(type){
+  const shape = PIECES[type].map(r=>[...r]);
+  return {
+    type,
+    shape,
+    x: Math.floor(COLS/2)-Math.floor(shape[0].length/2),
+    y: 0
+  };
+}
+
 function randomPiece(){
   const idx = Math.floor(Math.random()*PIECES.length);
-  const shape = PIECES[idx].map(r=>[...r]);
-  return makePiece(shape);
-}
-
-function cloneShape(shape){
-  return shape.map(row => [...row]);
-}
-
-function makePiece(shape){
-  const copy = cloneShape(shape);
-  return {shape:copy, x:Math.floor(COLS/2)-Math.floor(copy[0].length/2), y:0};
+  return makePiece(idx);
 }
 
 function resetPiecePosition(p){
+  p.shape = PIECES[p.type].map(r=>[...r]);
   p.x = Math.floor(COLS/2)-Math.floor(p.shape[0].length/2);
   p.y = 0;
-  return p;
 }
 
 function rotate(m){
@@ -333,21 +333,13 @@ function valid(p,shape){
 }
 
 function merge(){
-  lastLockedCells = [];
   piece.shape.forEach((row,r)=>row.forEach((v,c)=>{
-    if(v&&piece.y+r>=0){
-      const y = piece.y + r;
-      const x = piece.x + c;
-      board[y][x] = v;
-      lastLockedCells.push({x, y, v});
-    }
+    if(v&&piece.y+r>=0) board[piece.y+r][piece.x+c]=v;
   }));
 }
 
 // ── Line-clear state ──────────────────────────────────────────────
 let flashRows = new Set();   // row indices currently lit white
-let flashCells = new Map();   // "x,y" keys for the locked piece cells flashing white
-let lastLockedCells = [];     // cells from the piece that just locked into the board
 let clearingLines = false;   // true while animation is running
 
 function clearLines(){
@@ -355,39 +347,26 @@ function clearLines(){
   const fullRows = [];
   for(let r=0; r<ROWS; r++) if(board[r].every(c=>c)) fullRows.push(r);
   if(fullRows.length === 0){
-    lastLockedCells = [];
     spawnPiece();
-    draw();
     return false;
   }
   clearingLines = true;
   cancelAnimationFrame(animFrame); // halt the game loop during animation
-  animateLineClear(fullRows, lastLockedCells);
+  animateLineClear(fullRows);
   return true;
 }
 
-function animateLineClear(rows, lockedCells){
-  // Three quick flashes. Only the locked-piece cells inside the cleared rows flash.
-  const FLASHES = 3, HALF_MS = 45;
-  const rowSet = new Set(rows);
-  const lockedCellMap = new Map(
-    lockedCells
-      .filter(cell => rowSet.has(cell.y))
-      .map(cell => [`${cell.x},${cell.y}`, cell.v])
-  );
+function animateLineClear(rows){
+  const FLASHES = 3, HALF_MS = 30;
   let tick = 0;
   function step(){
-    const flashOn = tick % 2 === 0;
-    flashRows = flashOn ? new Set(rows) : new Set();
-    flashCells = flashOn ? new Map(lockedCellMap) : new Map();
+    flashRows = (tick % 2 === 0) ? new Set(rows) : new Set();
     draw();
     tick++;
     if(tick < FLASHES * 2){
       setTimeout(step, HALF_MS);
     } else {
       flashRows = new Set();
-      flashCells = new Map();
-      lastLockedCells = [];
       removeRows(rows);
     }
   }
@@ -412,7 +391,6 @@ function removeRows(rows){
   updateUI();
   clearingLines = false;
   spawnPiece();
-  draw();
   dropCounter = 0;
   lastTime = performance.now();
   animFrame = requestAnimationFrame(loop);
@@ -474,23 +452,14 @@ function draw(){
   ctx.lineWidth=0.5;
   for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) ctx.strokeRect(c*CELL,r*CELL,CELL,CELL);
 
-  // board: flash cleared rows, and mark only the locked-piece cells inside those rows
+  // board — flash rows white instead of drawing blocks
   for(let r=0;r<ROWS;r++){
     if(flashRows.has(r)){
       ctx.fillStyle='#ffffff';
       ctx.fillRect(0,r*CELL,canvas.width,CELL);
-
-      // The block from the newly locked piece is the only piece cell highlighted.
-      for(let c=0;c<COLS;c++){
-        if(flashCells.has(`${c},${r}`)){
-          ctx.fillStyle='#ffffff';
-          ctx.fillRect(c*CELL,r*CELL,CELL,CELL);
-        }
-      }
     } else {
-      for(let c=0;c<COLS;c++){
+      for(let c=0;c<COLS;c++)
         if(board[r][c]) drawBlock(ctx,c*CELL,r*CELL,board[r][c]);
-      }
     }
   }
 
@@ -512,31 +481,31 @@ function draw(){
   }));
 }
 
-function drawMini(cx, miniCanvas, p){
+function drawPreview(cx, previewPiece, w, h){
   cx.fillStyle='#000';
-  cx.fillRect(0,0,miniCanvas.width,miniCanvas.height);
-  if(!p) return;
-  const s=p.shape, sz=18;
-  const ox=Math.floor((miniCanvas.width-s[0].length*sz)/2);
-  const oy=Math.floor((miniCanvas.height-s.length*sz)/2);
+  cx.fillRect(0,0,w,h);
+  if(!previewPiece) return;
+  const s=PIECES[previewPiece.type], sz=18;
+  const ox=Math.floor((w-s[0].length*sz)/2);
+  const oy=Math.floor((h-s.length*sz)/2);
   s.forEach((row,r)=>row.forEach((v,c)=>{
     if(v) drawBlock(cx,ox+c*sz,oy+r*sz,v,sz);
   }));
 }
 
 function drawNext(){
-  drawMini(nCtx, nextCanvas, nextPiece);
+  drawPreview(nCtx, nextPiece, nextCanvas.width, nextCanvas.height);
 }
 
 function drawHold(){
-  drawMini(hCtx, holdCanvas, holdPiece);
+  drawPreview(hCtx, heldPiece, holdCanvas.width, holdCanvas.height);
 }
 
 function spawnPiece(){
   piece=nextPiece||randomPiece();
   resetPiecePosition(piece);
   nextPiece=randomPiece();
-  canHold = true;
+  canHold=true;
   drawNext();
   drawHold();
   if(!valid(piece)) gameOver();
@@ -548,24 +517,31 @@ function gameOver(){
   document.getElementById('overlayTitle').textContent='GAME OVER';
   document.getElementById('overlaySub').textContent='SCORE  '+pad(score,6);
   document.getElementById('startBtn').textContent='RETRY';
-  document.getElementById('startBtn').onclick=startGame;
+  document.getElementById('startBtn').style.display='inline-block';
   document.getElementById('overlay').style.display='flex';
 }
 
 function startGame(){
+  cancelAnimationFrame(animFrame);
   board=createBoard();
   score=0;level=0;lines=0;
   counts={1:0,2:0,3:0,4:0};
   dropInterval=800;dropCounter=0;lastTime=0;
-  piece=null;nextPiece=null;holdPiece=null;canHold=true;paused=false;
-  clearingLines=false;flashRows=new Set();flashCells=new Map();lastLockedCells=[];
+  piece=null;nextPiece=null;heldPiece=null;canHold=true;paused=false;
+  clearingLines=false;flashRows=new Set();
+  document.getElementById('startBtn').style.display='inline-block';
   document.getElementById('overlay').style.display='none';
-  document.getElementById('startBtn').onclick=startGame;
   updateUI();
   gameRunning=true;
   nextPiece=randomPiece();
   spawnPiece();
   animFrame=requestAnimationFrame(loop);
+}
+
+function lockPiece(){
+  merge();
+  piece = null;
+  return clearLines();
 }
 
 function loop(ts){
@@ -580,52 +556,14 @@ function loop(ts){
       } else {
         // Only merge if not already being handled by softDrop/hardDrop
         if(!clearingLines){
-          merge();
-          if(clearLines()) return; // animated clears restart the loop via removeRows
+          const isClearing = lockPiece(); // line-clear animation restarts the loop when needed
+          if(isClearing) return;
         }
       }
     }
     draw();
   }
   animFrame=requestAnimationFrame(loop);
-}
-
-function togglePause(){
-  if(!gameRunning || clearingLines) return;
-  paused = !paused;
-  stopDAS();
-  if(paused){
-    document.getElementById('overlayTitle').textContent='PAUSED';
-    document.getElementById('overlaySub').textContent='PRESS P OR ESC TO RESUME';
-    document.getElementById('startBtn').textContent='RESUME';
-    document.getElementById('startBtn').onclick=togglePause;
-    document.getElementById('overlay').style.display='flex';
-  } else {
-    document.getElementById('overlay').style.display='none';
-    document.getElementById('startBtn').onclick=startGame;
-    lastTime=performance.now();
-  }
-}
-
-function holdCurrentPiece(){
-  if(!gameRunning || paused || clearingLines || !canHold) return;
-  const current = makePiece(piece.shape);
-  if(!holdPiece){
-    holdPiece = current;
-    piece = nextPiece || randomPiece();
-    nextPiece = randomPiece();
-  } else {
-    const swap = holdPiece;
-    holdPiece = current;
-    piece = makePiece(swap.shape);
-  }
-  canHold = false;
-  resetPiecePosition(piece);
-  drawHold();
-  drawNext();
-  dropCounter = 0;
-  if(!valid(piece)) gameOver();
-  draw();
 }
 
 function moveLeft(){ if(gameRunning&&!paused&&!clearingLines&&valid({x:piece.x-1,y:piece.y,shape:piece.shape})) piece.x--; }
@@ -649,39 +587,106 @@ function softDrop(){
     updateUI();
   } else {
     // Piece is already at the bottom — lock it now
-    merge();
-    clearLines();
+    lockPiece();
   }
 }
 function hardDrop(){
   if(!gameRunning||paused||clearingLines) return;
   while(valid({x:piece.x,y:piece.y+1,shape:piece.shape})){piece.y++;score+=2;}
-  merge(); clearLines(); updateUI();
+  updateUI();
+  lockPiece();
 }
 
-let dasTimer=null, dasRepeat=null;
-function startDAS(fn){ fn(); dasTimer=setTimeout(()=>{ dasRepeat=setInterval(fn,50); },180); }
-function stopDAS(){ clearTimeout(dasTimer); clearInterval(dasRepeat); }
+function holdCurrentPiece(){
+  if(!gameRunning||paused||clearingLines||!piece||!canHold) return;
+  const currentType = piece.type;
+  if(!heldPiece){
+    heldPiece = makePiece(currentType);
+    piece = nextPiece || randomPiece();
+    resetPiecePosition(piece);
+    nextPiece = randomPiece();
+  } else {
+    const heldType = heldPiece.type;
+    heldPiece = makePiece(currentType);
+    piece = makePiece(heldType);
+  }
+  canHold = false;
+  dropCounter = 0;
+  drawHold();
+  drawNext();
+  if(!valid(piece)) gameOver();
+  draw();
+}
+
+function togglePause(){
+  if(!gameRunning||clearingLines) return;
+  paused = !paused;
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('startBtn');
+  if(paused){
+    document.getElementById('overlayTitle').textContent='PAUSED';
+    document.getElementById('overlaySub').textContent='P / ESC TO RESUME';
+    startBtn.style.display='none';
+    overlay.style.display='flex';
+  } else {
+    overlay.style.display='none';
+    startBtn.style.display='inline-block';
+    lastTime = performance.now();
+  }
+}
+
+function restartGame(){
+  startGame();
+}
 
 document.addEventListener('keydown',e=>{
-  if(!gameRunning&&e.code==='Enter'){startGame();return;}
+  if(e.code==='Enter' && !gameRunning){
+    e.preventDefault();
+    startGame();
+    return;
+  }
+  if(e.code==='KeyR'){
+    e.preventDefault();
+    restartGame();
+    return;
+  }
   if(!gameRunning) return;
+
   switch(e.code){
-    case 'ArrowLeft':  e.preventDefault(); if(!e.repeat) startDAS(moveLeft); break;
-    case 'ArrowRight': e.preventDefault(); if(!e.repeat) startDAS(moveRight); break;
-    case 'ArrowUp':    e.preventDefault(); if(!e.repeat) rotatePiece(); break;
-    case 'ArrowDown':  e.preventDefault(); softDrop(); break;
-    case 'Space':      e.preventDefault(); hardDrop(); break;
-    case 'Tab':       e.preventDefault(); if(!e.repeat) holdCurrentPiece(); break;
-    case 'KeyP':      e.preventDefault(); if(!e.repeat) togglePause(); break;
-    case 'Escape':    e.preventDefault(); if(!e.repeat) togglePause(); break;
-    case 'Enter': if(!gameRunning) startGame(); break;
+    case 'ArrowLeft':
+      e.preventDefault();
+      moveLeft();
+      break;
+    case 'ArrowRight':
+      e.preventDefault();
+      moveRight();
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      if(!e.repeat) rotatePiece();
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      softDrop();
+      break;
+    case 'Space':
+      e.preventDefault();
+      if(!e.repeat) hardDrop();
+      break;
+    case 'Tab':
+      e.preventDefault();
+      if(!e.repeat) holdCurrentPiece();
+      break;
+    case 'KeyP':
+    case 'Escape':
+      e.preventDefault();
+      if(!e.repeat) togglePause();
+      break;
   }
 });
-document.addEventListener('keyup',e=>{
-  if(e.code==='ArrowLeft'||e.code==='ArrowRight') stopDAS();
-});
 
+board=createBoard();
+drawHold();
 draw();
 </script>
 </body>
