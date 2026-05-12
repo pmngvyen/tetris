@@ -224,9 +224,13 @@
         <div class="info-label">LINES</div>
         <div class="info-value" id="linesDisplay">000</div>
       </div>
+      <div class="info-box">
+        <div class="info-label">SOUND</div>
+        <div class="info-value" id="soundDisplay">ON</div>
+      </div>
       <div class="info-box" style="font-size:6px;color:#888;line-height:2.4;padding:7px;">
         <div style="color:#888;margin-bottom:4px;font-size:6px;">CONTROLS</div>
-        ←→ MOVE<br>↑ ROTATE<br>↓ SOFT DROP<br>SPC DROP<br>TAB HOLD<br>P/ESC PAUSE<br>R RESTART
+        ←→ MOVE<br>↑ ROTATE<br>↓ SOFT DROP<br>SPC DROP<br>TAB HOLD<br>P/ESC PAUSE<br>R RESTART<br>M MUTE
       </div>
     </div>
   </div>
@@ -287,8 +291,110 @@ let board, piece, nextPiece, heldPiece, canHold, score, level, lines, hiScore, g
 let dropInterval, lastTime, dropCounter, animFrame;
 let counts = {1:0,2:0,3:0,4:0};
 
+let audioCtx = null;
+let soundMuted = localStorage.getItem('nes_sound_muted') === '1';
+
+function updateSoundUI(){
+  const el = document.getElementById('soundDisplay');
+  if(el) el.textContent = soundMuted ? 'OFF' : 'ON';
+}
+
+function ensureAudio(){
+  if(soundMuted) return null;
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function tone(freq, start, duration, type='square', volume=0.08){
+  const ac = ensureAudio();
+  if(!ac) return;
+  const osc = ac.createOscillator();
+  const gain = ac.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, ac.currentTime + start);
+  gain.gain.setValueAtTime(0.0001, ac.currentTime + start);
+  gain.gain.exponentialRampToValueAtTime(volume, ac.currentTime + start + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + start + duration);
+  osc.connect(gain);
+  gain.connect(ac.destination);
+  osc.start(ac.currentTime + start);
+  osc.stop(ac.currentTime + start + duration + 0.02);
+}
+
+function noise(start, duration, volume=0.05){
+  const ac = ensureAudio();
+  if(!ac) return;
+  const bufferSize = Math.max(1, Math.floor(ac.sampleRate * duration));
+  const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate);
+  const data = buffer.getChannelData(0);
+  for(let i=0;i<bufferSize;i++) data[i] = Math.random() * 2 - 1;
+  const src = ac.createBufferSource();
+  const gain = ac.createGain();
+  src.buffer = buffer;
+  gain.gain.setValueAtTime(volume, ac.currentTime + start);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + start + duration);
+  src.connect(gain);
+  gain.connect(ac.destination);
+  src.start(ac.currentTime + start);
+  src.stop(ac.currentTime + start + duration);
+}
+
+function playSound(name){
+  if(soundMuted) return;
+  switch(name){
+    case 'start':
+      tone(392,0,0.08,'square',0.07); tone(523,0.08,0.09,'square',0.07); tone(784,0.17,0.12,'square',0.07);
+      break;
+    case 'move':
+      tone(220,0,0.035,'square',0.035);
+      break;
+    case 'rotate':
+      tone(330,0,0.045,'square',0.045); tone(440,0.035,0.04,'square',0.04);
+      break;
+    case 'softDrop':
+      tone(150,0,0.025,'square',0.025);
+      break;
+    case 'hardDrop':
+      tone(90,0,0.055,'sawtooth',0.065); noise(0,0.045,0.025);
+      break;
+    case 'lock':
+      tone(120,0,0.05,'square',0.045);
+      break;
+    case 'hold':
+      tone(500,0,0.05,'square',0.04); tone(300,0.045,0.05,'square',0.04);
+      break;
+    case 'line':
+      tone(523,0,0.06,'square',0.06); tone(659,0.055,0.06,'square',0.06); tone(784,0.11,0.08,'square',0.065);
+      break;
+    case 'tetris':
+      tone(523,0,0.06,'square',0.065); tone(659,0.06,0.06,'square',0.065); tone(784,0.12,0.06,'square',0.065); tone(1046,0.18,0.12,'square',0.075);
+      break;
+    case 'pause':
+      tone(300,0,0.08,'triangle',0.055);
+      break;
+    case 'resume':
+      tone(600,0,0.08,'triangle',0.055);
+      break;
+    case 'gameOver':
+      tone(220,0,0.12,'square',0.06); tone(165,0.12,0.12,'square',0.06); tone(110,0.24,0.18,'square',0.06);
+      break;
+    case 'mute':
+      tone(440,0,0.05,'square',0.04);
+      break;
+  }
+}
+
+function toggleSound(){
+  soundMuted = !soundMuted;
+  localStorage.setItem('nes_sound_muted', soundMuted ? '1' : '0');
+  updateSoundUI();
+  if(!soundMuted) playSound('mute');
+}
+
 hiScore = parseInt(localStorage.getItem('nes_hi') || '0');
 document.getElementById('hiDisplay').textContent = pad(hiScore,6);
+updateSoundUI();
 
 function pad(n,l){ return String(Math.floor(n)).padStart(l,'0'); }
 
@@ -350,6 +456,7 @@ function clearLines(){
     spawnPiece();
     return false;
   }
+  playSound(fullRows.length === 4 ? 'tetris' : 'line');
   clearingLines = true;
   cancelAnimationFrame(animFrame); // halt the game loop during animation
   animateLineClear(fullRows);
@@ -512,6 +619,7 @@ function spawnPiece(){
 }
 
 function gameOver(){
+  playSound('gameOver');
   gameRunning=false;
   cancelAnimationFrame(animFrame);
   document.getElementById('overlayTitle').textContent='GAME OVER';
@@ -533,6 +641,7 @@ function startGame(){
   document.getElementById('overlay').style.display='none';
   updateUI();
   gameRunning=true;
+  playSound('start');
   nextPiece=randomPiece();
   spawnPiece();
   animFrame=requestAnimationFrame(loop);
@@ -541,7 +650,9 @@ function startGame(){
 function lockPiece(){
   merge();
   piece = null;
-  return clearLines();
+  const isClearing = clearLines();
+  if(!isClearing) playSound('lock');
+  return isClearing;
 }
 
 function loop(ts){
@@ -566,10 +677,20 @@ function loop(ts){
   animFrame=requestAnimationFrame(loop);
 }
 
-function moveLeft(){ if(gameRunning&&!paused&&!clearingLines&&valid({x:piece.x-1,y:piece.y,shape:piece.shape})) piece.x--; }
-function moveRight(){ if(gameRunning&&!paused&&!clearingLines&&valid({x:piece.x+1,y:piece.y,shape:piece.shape})) piece.x++; }
+function moveLeft(){
+  if(gameRunning&&!paused&&!clearingLines&&piece&&valid({x:piece.x-1,y:piece.y,shape:piece.shape})){
+    piece.x--;
+    playSound('move');
+  }
+}
+function moveRight(){
+  if(gameRunning&&!paused&&!clearingLines&&piece&&valid({x:piece.x+1,y:piece.y,shape:piece.shape})){
+    piece.x++;
+    playSound('move');
+  }
+}
 function rotatePiece(){
-  if(!gameRunning||paused||clearingLines) return;
+  if(!gameRunning||paused||clearingLines||!piece) return;
   const rot=rotate(piece.shape);
   let off=0;
   if(!valid({x:piece.x,y:piece.y,shape:rot})){
@@ -577,23 +698,27 @@ function rotatePiece(){
     if(!valid({x:piece.x+off,y:piece.y,shape:rot})){off*=2;if(!valid({x:piece.x+off,y:piece.y,shape:rot}))return;}
   }
   piece.shape=rot; piece.x+=off;
+  playSound('rotate');
 }
 function softDrop(){
-  if(!gameRunning||paused||clearingLines) return;
+  if(!gameRunning||paused||clearingLines||!piece) return;
   if(valid({x:piece.x,y:piece.y+1,shape:piece.shape})){
     piece.y++;
     score++;
     dropCounter=0; // reset so the loop doesn't immediately merge too
     updateUI();
+    playSound('softDrop');
   } else {
     // Piece is already at the bottom — lock it now
     lockPiece();
   }
 }
 function hardDrop(){
-  if(!gameRunning||paused||clearingLines) return;
-  while(valid({x:piece.x,y:piece.y+1,shape:piece.shape})){piece.y++;score+=2;}
+  if(!gameRunning||paused||clearingLines||!piece) return;
+  let distance = 0;
+  while(valid({x:piece.x,y:piece.y+1,shape:piece.shape})){piece.y++;score+=2;distance++;}
   updateUI();
+  if(distance > 0) playSound('hardDrop');
   lockPiece();
 }
 
@@ -612,6 +737,7 @@ function holdCurrentPiece(){
   }
   canHold = false;
   dropCounter = 0;
+  playSound('hold');
   drawHold();
   drawNext();
   if(!valid(piece)) gameOver();
@@ -624,11 +750,13 @@ function togglePause(){
   const overlay = document.getElementById('overlay');
   const startBtn = document.getElementById('startBtn');
   if(paused){
+    playSound('pause');
     document.getElementById('overlayTitle').textContent='PAUSED';
     document.getElementById('overlaySub').textContent='P / ESC TO RESUME';
     startBtn.style.display='none';
     overlay.style.display='flex';
   } else {
+    playSound('resume');
     overlay.style.display='none';
     startBtn.style.display='inline-block';
     lastTime = performance.now();
@@ -648,6 +776,11 @@ document.addEventListener('keydown',e=>{
   if(e.code==='KeyR'){
     e.preventDefault();
     restartGame();
+    return;
+  }
+  if(e.code==='KeyM'){
+    e.preventDefault();
+    if(!e.repeat) toggleSound();
     return;
   }
   if(!gameRunning) return;
